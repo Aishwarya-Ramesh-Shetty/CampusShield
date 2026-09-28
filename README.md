@@ -1,113 +1,147 @@
-# College Portal Security Assessment Application
+# PortalSentinel
 
 ## Project Description
 
-A controlled mock college portal and a separate future security-assessment component for studying authentication, session-management, and authorization. Assessment activity is restricted to this project's own local application. Phase 2 establishes a secure authentication baseline; it does not add intentional vulnerabilities or a scanner.
+PortalSentinel is a secure mock college portal designed for a Semester 7 Cyber Security honours mini-project. The application simulates a student portal and admin workflow while keeping the foundation secure and production-safe. Phases 1–3 provide the architecture, secure authentication baseline, and functional portal. Phase 4 adds a controlled assessment framework and reporting workflow.
 
-## Problem Statement and Objectives
+## Features
 
-Authentication and session-management mistakes can expose student information and privileged portal functions. This project provides a controlled environment to compare a secure implementation with carefully introduced test cases in a later phase, record evidence, apply fixes, and re-test.
+- Secure JWT-based authentication with HTTP-only cookies
+- Role-based access for student, admin, and security-assessor roles
+- Student dashboard with profile, marks, attendance, fees, and notices
+- Admin dashboard with student listing, student detail view, and notice management
+- Responsive React + Tailwind interface
+- MongoDB-backed academic data models with seed data for local development
+- Controlled assessment dashboard, scan history, test results, and finding reports
+- Only a harmless local health check is registered; no exploits or intentional vulnerabilities are included
 
-- Keep portal, database, and future security-assessment logic modular.
-- Establish a secure authentication and role-authorization baseline.
-- In later phases, test only the local mock portal and document findings.
-- Fix findings and re-test to demonstrate the secure result.
+## User Roles
 
-## Technology Stack
+- Student: personal academic dashboard, profile, marks, attendance, fees, notices
+- Admin: manage notices, view portal summary, access student records
+- Security assessor: controlled local portal scans and assessment reports
 
-- Frontend: React, Vite, Tailwind CSS, React Router
-- Backend: Node.js, Express.js
-- Database: MongoDB, Mongoose
-- Authentication: bcrypt, JWT, HTTP-only cookies
-- Development: VS Code, Git, GitHub, MongoDB Compass
-- Testing: Node.js test runner, Supertest, Postman, Chrome DevTools; OWASP ZAP is planned later
+## Database Models
 
-## Planned Roles
-
-- `student`: student portal resources
-- `admin`: admin portal resources
-- `security_assessor`: security assessment resources only
-
-Public registration always assigns `student`; administrative roles are provisioned only through the development seed or another trusted administrative process.
-
-## High-Level Architecture
-
-```text
-React/Vite client -> Express JSON API -> Mongoose models -> MongoDB
-                         |
-                         +-> auth and exact-role middleware
-
-Future assessment component -> this project's local mock portal only
-```
-
-The client and server are npm workspaces. Auth controllers/routes, middleware, security settings, models, and database configuration are separate modules. Future assessment logic remains separate from portal logic.
-
-## Authentication Architecture
-
-### Password Handling
-
-Registration normalizes email and hashes the password with bcrypt cost factor 12 before persistence. The User schema hides the password field from ordinary queries and validates that stored values have bcrypt hash format. API responses are built from an explicit safe-user projection, never from the full database document.
-
-### JWT and Cookie Flow
-
-1. Login normalizes the submitted email, finds the user, and uses `bcrypt.compare()`; all credential failures return `Invalid email or password.`
-2. On success, the server signs a 15-minute HS256 JWT containing only the subject (user ID), role claim, and token version.
-3. The JWT is set in the `college_portal_auth` cookie. It is never returned in JSON or stored in browser JavaScript storage.
-4. The authentication middleware verifies the signature and expiration, loads the user from MongoDB, checks the token version, and derives the current role from that database record.
-5. Logout increments the user's token version and clears the cookie, so replaying the old cookie is rejected as well.
-
-Cookie attributes: `httpOnly` prevents JavaScript access; `secure` is enabled in production and off for local HTTP development; `sameSite=lax` limits cross-site cookie sending while supporting same-site local frontend/API requests; `path=/` makes the cookie available to API routes; the 15-minute `maxAge` matches JWT expiry. Cookie clearing uses the same path and security attributes.
-
-The frontend includes credentials on API requests. CORS allows only `CLIENT_URL` and enables credentials; it does not combine credentials with a wildcard origin. Frontend route guards improve navigation only; all protected APIs enforce authentication and roles independently.
+- User: credentials, role, session metadata
+- Student: academic profile and identity for each user
+- Mark: subject-level marks entries
+- Attendance: per-subject attendance tracking
+- Fee: fee breakdown by semester and year
+- Notice: active/inactive admin notice records
+- SecurityScan: status, test/finding totals, severity counts, fixed target label, and academic score
+- SecurityTestResult: one persisted result per registered test execution
+- VulnerabilityFinding: a reportable issue generated only by a failed registered test with finding metadata
+- SecurityAuditEvent: assessor, scan, action, and timestamp for scan lifecycle events
 
 ## API Endpoints
 
-| Method | Endpoint | Access |
-| --- | --- | --- |
-| `GET` | `/api/health` | Public health check |
-| `POST` | `/api/auth/register` | Public; always creates a student |
-| `POST` | `/api/auth/login` | Public; sets HTTP-only cookie |
-| `GET` | `/api/auth/me` | Authenticated; returns safe current user |
-| `POST` | `/api/auth/logout` | Public/idempotent; revokes cookie token and clears cookie |
-| `GET` | `/api/students/dashboard` | Student only |
-| `GET` | `/api/admin/dashboard` | Admin only |
-| `GET` | `/api/security/dashboard` | Security assessor only |
+### Authentication
 
-Errors use `{ "success": false, "message": "..." }`. Password hashes and JWTs are not included in responses.
+- POST /api/auth/register
+- POST /api/auth/login
+- GET /api/auth/me
+- POST /api/auth/logout
 
-## Configure MongoDB and Environment
+### Student
 
-Prerequisites: Node.js 20 or later, npm, and a running local MongoDB or a MongoDB connection string. The API fails at startup with a sanitized message if MongoDB is missing or unavailable.
+- GET /api/students/dashboard
+- GET /api/students/profile
+- GET /api/students/marks
+- GET /api/students/attendance
+- GET /api/students/fees
+- GET /api/students/notices
 
-Copy `server/.env.example` to `server/.env`, then set `MONGODB_URI` and a unique random `JWT_SECRET` of at least 32 bytes. Generate a secret with:
+### Admin
 
-```sh
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+- GET /api/admin/dashboard
+- GET /api/admin/students
+- GET /api/admin/students/:studentId
+- GET /api/admin/notices
+- POST /api/admin/notices
+- PUT /api/admin/notices/:noticeId
+- DELETE /api/admin/notices/:noticeId
+
+### Security assessor
+
+- GET /api/security/dashboard
+- POST /api/security/scans
+- GET /api/security/scans
+- GET /api/security/scans/:scanId
+- GET /api/security/scans/:scanId/results
+- GET /api/security/scans/:scanId/findings
+- GET /api/security/findings
+- GET /api/security/findings/:findingId
+
+All security endpoints require an authenticated `security_assessor`. Students and admins are denied; admin role does not imply assessor access. Findings are read-only through the API and are generated by the assessment runner, never submitted by clients. A scan request accepts no options.
+
+## Security Assessment Architecture
+
+```text
+Security Test
+	↓
+Test Runner (sequential execution)
+	↓
+SecurityTestResult
+	↓ (failed test with registered finding metadata only)
+VulnerabilityFinding
+	↓
+Severity and academic project score
+	↓
+Evidence and remediation report
+	↓
+Retest in a later assessment phase
 ```
 
-Environment variables:
+Individual checks implement a small contract: `id`, `name`, `category`, `description`, `severity`, `endpoint`, `method`, `remediation`, and `execute()`. The central `server/src/security/tests/securityTestRegistry.js` currently registers only `SECURITY-BASELINE-001` (Portal Health Check). It requests the internal `/api/health` endpoint and records PASS only for HTTP 200 with `{ "success": true }`. Authentication, session, authorization, and configuration vulnerability tests are not implemented in this phase.
 
-| Variable | Purpose | Default/requirement |
-| --- | --- | --- |
-| `PORT` | Express port | `5000` |
-| `MONGODB_URI` | MongoDB connection string | Required |
-| `JWT_SECRET` | JWT signing secret | Required; at least 32 bytes |
-| `CLIENT_URL` | Exact allowed CORS origin | `http://localhost:5173` |
-| `NODE_ENV` | Environment and cookie `secure` setting | Use `development` locally; `production` enables Secure cookies |
+The target label is fixed as **Local College Portal**. The runner constructs its origin from the server's own local port and accepts only loopback HTTP origins internally. The API rejects any client-supplied scan options, including a target URL. This framework is exclusively for this project's controlled mock portal; it has no arbitrary URL field, external-site scanning, port scanning, reconnaissance, or exploitation capability.
 
-The frontend optionally accepts `VITE_API_URL` at build time; otherwise it calls `http://localhost:5000`.
+Evidence is stored as structured, redacted observations. Passwords, secrets, tokens, cookies, MongoDB connection strings, email addresses, and phone-like values are scrubbed; response bodies and authentication material are not recorded by the baseline test. Scan lifecycle audit events are `SCAN_STARTED`, `SCAN_COMPLETED`, and `SCAN_FAILED` and contain no credentials or tokens.
 
-Never commit `.env` or use the documented development passwords outside a local throwaway database.
+### Security Score
 
-## Development Seed Accounts
+The current academic project metric starts at 100 and subtracts 25 for each Critical, 15 for each High, 8 for each Medium, and 3 for each Low finding, with a floor of 0. Informational findings deduct no points. This is a small project-specific progress metric, not an OWASP or CVSS score and not an industry security rating. The baseline health test is informational and creates no vulnerability finding, so a clean initial assessment reports 100.
 
-The seed command refuses to run unless `NODE_ENV=development` is explicitly set. It creates only fake development users, hashes their passwords, and assigns the fixed roles below. It is not an authentication bypass or a production account mechanism.
+### Assessor Workflow
+
+1. Sign in with a development security-assessor account.
+2. Open `/security` and select **Run Security Scan**. The destination remains fixed by the server.
+3. Review the persisted security test results and evidence, then browse scan history or findings.
+4. Finding status and remediation fields are report metadata; client-side finding creation or editing is not exposed.
+
+The UI includes `/security`, `/security/scans`, `/security/scans/:scanId`, `/security/findings`, and `/security/findings/:findingId`. Every route is protected by the existing exact-role frontend guard, and every API independently enforces the security-assessor role.
+
+## Student Workflow
+
+1. Sign in as a student account.
+2. View the dashboard with profile summary, attendance, recent marks, fee status, and notices.
+3. Navigate to profile, marks, attendance, fees, and notices pages.
+4. Only the authenticated student identity is used to resolve records; the backend does not trust a client-supplied student ID.
+
+## Admin Workflow
+
+1. Sign in as the admin account.
+2. View the admin dashboard summary for students and notices.
+3. Review the student table and open individual student records.
+4. Create, view, and deactivate notices from the admin notice management page.
+5. All admin actions require the admin role and the authenticated session.
+
+## Development Seed Instructions
+
+The seed command is development-only and refuses to run unless NODE_ENV=development is set.
+
+Use only an isolated, disposable development database. The current seed refreshes demo marks, attendance, and fee records and deletes/recreates notices. It does not verify whether `MONGODB_URI` points to a production or shared database.
+
+Development sign-in accounts:
 
 | Role | Email | Development password |
 | --- | --- | --- |
 | Student | `student@example.com` | `StudentDev!2026` |
 | Admin | `admin@example.com` | `AdminDev!2026` |
 | Security assessor | `security@example.com` | `SecurityDev!2026` |
+
+These fixed credentials are for a local throwaway database only. Never reuse them outside development.
 
 PowerShell:
 
@@ -122,39 +156,50 @@ macOS/Linux:
 NODE_ENV=development npm run seed:dev --workspace server
 ```
 
-## Run the Application
+This creates fake student, academic, fee, and notice data without affecting production data.
 
-Install packages once from the project root:
+## How to Run the Project
+
+1. Install dependencies from the root:
 
 ```sh
 npm install
 ```
 
-Configure `server/.env`, then start the backend and frontend in separate terminals:
+2. Create and populate the backend environment file:
+
+```sh
+copy server\.env.example server\.env
+```
+
+3. Start the backend and frontend in separate terminals:
 
 ```sh
 npm run dev:server
 npm run dev:client
 ```
 
-The frontend is normally at `http://localhost:5173`; the API is at `http://localhost:5000`. `GET http://localhost:5000/api/health` checks the server after a successful database connection.
+4. Open the frontend at http://localhost:5173 and verify the API at http://localhost:5000.
 
-## Test with Postman
+## Phase 4 Notes
 
-1. Start MongoDB and the backend, then optionally seed the local development accounts.
-2. Send `POST http://localhost:5000/api/auth/login` with JSON `{ "email": "student@example.com", "password": "StudentDev!2026" }`. Keep Postman's cookie jar enabled; the response JSON contains the user but not the JWT.
-3. Send `GET /api/auth/me` and `GET /api/students/dashboard` to confirm the cookie is sent.
-4. Send `GET /api/admin/dashboard` with the student cookie; it should return `403`. Without a cookie, protected resources return `401`.
-5. Send `POST /api/auth/logout`, then repeat a protected request; it should return `401`. The server also revokes the prior token version.
+Phase 4 builds the framework and reporting surfaces only. Its sole registered test is a benign health check against the local portal. It does not weaken authentication, add an attack test, create fake vulnerability findings, or scan external systems. Stop here until a separate phase instruction is provided.
 
-Registration accepts `name`, `email`, `password` (minimum 12 characters), and `studentId`. Any supplied `role` is ignored and public registrations are students.
+## Validate
+
+From the project root:
+
+```sh
+npm test
+npm run build
+```
+
+Backend tests cover the existing authentication and Phase 3 portal flows plus assessor authorization, target rejection, health-test PASS persistence, scan summary and retrieval, audit events, score calculations, and evidence redaction.
 
 ## Development Phases
 
 1. Project foundation and architecture (complete)
 2. Secure authentication and authorization baseline (complete)
-3. Controlled vulnerabilities and scoped security tests (not started; requires a separate instruction)
-4. Findings, remediation, and re-testing
-5. Secure-result demonstration and documentation
-
-No intentional vulnerabilities, IDOR behavior, or scanner are part of the current implementation.
+3. Functional mock portal and secure data access (complete)
+4. Controlled security assessment framework and reporting (complete; baseline health test only)
+5. Future controlled security test phases (not started)

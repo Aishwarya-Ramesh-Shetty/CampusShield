@@ -47,6 +47,39 @@ function createMemoryUserModel() {
   };
 }
 
+function createEmptyPortalModel({ findOne } = {}) {
+  function createQuery() {
+    return {
+      sort() { return this; },
+      limit() { return this; },
+      then(resolve, reject) { return Promise.resolve([]).then(resolve, reject); },
+    };
+  }
+
+  return {
+    findOne: findOne ?? (async () => null),
+    find: createQuery,
+    async countDocuments() { return 0; },
+  };
+}
+
+function createEmptySecurityModel() {
+  function createQuery(value) {
+    return {
+      sort() { return this; },
+      limit() { return this; },
+      then(resolve, reject) { return Promise.resolve(value).then(resolve, reject); },
+    };
+  }
+
+  return {
+    find() { return createQuery([]); },
+    findOne() { return createQuery(null); },
+    async countDocuments() { return 0; },
+    async create(input) { return { ...input, _id: 'test-security-record', async save() {} }; },
+  };
+}
+
 async function addRoleAccount(UserModel, role, email) {
   const password = await bcrypt.hash('DevelopmentPassword!2026', 12);
   return UserModel.create({ name: role, email, password, role, studentId: '' });
@@ -54,7 +87,46 @@ async function addRoleAccount(UserModel, role, email) {
 
 function createTestServer() {
   const UserModel = createMemoryUserModel();
-  return { UserModel, app: createApp({ UserModel, jwtSecret }) };
+  const StudentModel = createEmptyPortalModel({
+    findOne: async ({ user }) => ({
+      _id: `student-${user}`,
+      studentId: '',
+      name: 'Test Student',
+      email: 'student@example.com',
+      course: 'Test Course',
+      department: 'Test Department',
+      year: 1,
+      semester: 1,
+      division: 'A',
+      phone: '',
+      admissionYear: 2026,
+    }),
+  });
+  const MarkModel = createEmptyPortalModel();
+  const AttendanceModel = createEmptyPortalModel();
+  const FeeModel = createEmptyPortalModel();
+  const NoticeModel = createEmptyPortalModel();
+  const SecurityScanModel = createEmptySecurityModel();
+  const SecurityTestResultModel = createEmptySecurityModel();
+  const VulnerabilityFindingModel = createEmptySecurityModel();
+  const SecurityAuditEventModel = createEmptySecurityModel();
+  return {
+    UserModel,
+    app: createApp({
+      UserModel,
+      StudentModel,
+      MarkModel,
+      AttendanceModel,
+      FeeModel,
+      NoticeModel,
+      SecurityScanModel,
+      SecurityTestResultModel,
+      VulnerabilityFindingModel,
+      SecurityAuditEventModel,
+      securityFetch: async () => new Response(JSON.stringify({ success: true }), { status: 200 }),
+      jwtSecret,
+    }),
+  };
 }
 
 describe('authentication and authorization baseline', () => {
